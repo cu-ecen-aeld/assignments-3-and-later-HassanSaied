@@ -16,8 +16,7 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
-    return true;
+    return system(cmd) == 0;
 }
 
 /**
@@ -38,30 +37,53 @@ bool do_exec(int count, ...)
 {
     va_list args;
     va_start(args, count);
-    char * command[count+1];
+    char * command[count+2];
     int i;
-    for(i=0; i<count; i++)
+    for(i=1; i<=count; i++)
     {
         command[i] = va_arg(args, char *);
     }
-    command[count] = NULL;
+    command[0] = command[1];
+    command[count+1] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    // command[count] = command[count];
 
 /*
  * TODO:
  *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
+ *   and wait instead of system (see LSP page 0).
  *   Use the command[0] as the full path to the command to execute
  *   (first argument to execv), and use the remaining arguments
  *   as second argument to the execv() command.
  *
 */
+    bool retVal = true;
+    pid_t process_id = fork();
+    if(process_id == 0){
+        //child
+        execv(command[0],&command[1]);
+        abort();
+    }else if(process_id == -1){
+        //error
+        retVal = false;
+    }else{
+        //parent
+        int status;
+        if(waitpid(process_id,&status,0) == -1){
+            retVal = false;
+        }
+
+        if(!WIFEXITED(status)){
+            retVal = false;
+        }else if(WEXITSTATUS(status) ==  1){
+             retVal = false;
+        }
+    }
 
     va_end(args);
 
-    return true;
+    return retVal;
 }
 
 /**
@@ -71,18 +93,16 @@ bool do_exec(int count, ...)
 */
 bool do_exec_redirect(const char *outputfile, int count, ...)
 {
-    va_list args;
+     va_list args;
     va_start(args, count);
-    char * command[count+1];
+    char * command[count+2];
     int i;
-    for(i=0; i<count; i++)
+    for(i=1; i<=count; i++)
     {
         command[i] = va_arg(args, char *);
     }
-    command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
+    command[0] = command[1];
+    command[count+1] = NULL;
 
 
 /*
@@ -92,8 +112,33 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    bool retVal = true;
+    pid_t process_id = fork();
+    int fd = open(outputfile,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC,0644);
+    if(fd < 0){
+        perror("open");
+        abort();
+    }
+    if(process_id == 0){
+        //child
+        if(dup2(fd,STDOUT_FILENO) < 0){
+            perror("dup2");
+            exit(-1);
+        }
+        execv(command[0],&command[1]);
+        retVal = false;  //return only if error occured
+    }else if(process_id == -1){
+        //error
+        retVal = false;
+    }else{
+        //parent
+        int status;
+        if(waitpid(process_id,&status,0) == -1){
+            retVal = false;
+        }
+    }
 
     va_end(args);
 
-    return true;
+    return retVal;
 }
